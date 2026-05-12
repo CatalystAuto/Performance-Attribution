@@ -1,0 +1,83 @@
+# ============================================================
+# Python
+# ============================================================
+__pycache__/
+*.py[cod]
+*.so
+build/
+dist/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+.mypy_cache/
+.ruff_cache/
+
+# ============================================================
+# Secrets & credentials — NEVER commit these
+# ============================================================
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+credentials.json
+secrets.yaml
+config.local.*
+
+# ============================================================
+# Data
+# ============================================================
+# Ignore everything in data/ by default…
+data/
+# …except the reference folder, which holds small lookup files we DO want tracked
+!data/reference/
+!data/reference/**
+
+# Catch-all for sensitive file types anywhere in the repo
+*.parquet
+*.feather
+*.h5
+*.hdf5
+*.db
+*.sqlite
+*.sqlite3
+
+# ============================================================
+# Outputs & logs
+# ============================================================
+output/
+outputs/
+results/
+logs/
+*.log
+
+# ============================================================
+# IDE / editor
+# ============================================================
+.vscode/
+.idea/
+*.swp
+
+# ============================================================
+# OS
+# ============================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ============================================================
+# Claude Code
+# ============================================================
+.claude/cache/
+.claude/local/
+# Note: .claude/skills/ and .claude/commands/ stay TRACKED so they're shared
