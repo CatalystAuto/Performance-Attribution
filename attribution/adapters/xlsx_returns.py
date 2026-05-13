@@ -33,6 +33,11 @@ def _parse_date_header(cell) -> tuple[pd.Timestamp | None, bool]:
     if len(s) > 8 and '.' in s:
         base, _, suffix = s.rpartition('.')
         if len(base) == 8 and base.isdigit() and suffix.isdigit():
+            # Validate that base is actually a parseable YYYYMMDD date
+            try:
+                pd.Timestamp(base)
+            except (ValueError, TypeError):
+                return None, False
             s = base
             is_dedup = True
     if len(s) != 8 or not s.isdigit():
