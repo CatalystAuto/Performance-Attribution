@@ -70,10 +70,16 @@ def main(argv: list[str] | None = None) -> int:
 
     log.info("Reading returns from %s", args.returns)
     try:
-        returns, published, returns_dq = xlsx_returns.read(args.returns)
+        read_result = xlsx_returns.read(args.returns)
     except Exception as e:
         log.error("Failed to read returns xlsx: %s", e)
         return 1
+
+    returns = read_result.returns
+    published = read_result.published
+    ignored_indices = read_result.ignored_indices
+    ticker_metadata = read_result.ticker_metadata
+    returns_dq = read_result.data_quality
 
     dates = _trading_dates_for_month(returns, args.month)
     if not dates:
@@ -100,46 +106,38 @@ def main(argv: list[str] | None = None) -> int:
     ]
 
     dq_rows = returns_dq + weights_dq + missing_dq
-    dq_frame = pd.DataFrame(dq_rows) if dq_rows else pd.DataFrame(
-        columns=["date", "severity", "category", "ticker", "note"]
-    )
 
     n_breaches = int(daily_full["exceeds_tolerance"].fillna(False).sum())
     cum_computed = float((1 + daily_full["benchmark_return_computed"].fillna(0)).prod() - 1)
     cum_published = float((1 + daily_full["benchmark_return_published"].fillna(0)).prod() - 1)
 
-    summary = {
-        "month": args.month,
-        "benchmark": args.benchmark,
-        "n_days": len(dates),
-        "cumulative_return_computed": cum_computed,
-        "cumulative_return_published": cum_published,
-        "max_abs_diff_bp": float(daily_full["diff_bp"].abs().max()) if len(daily_full) else 0.0,
-        "n_breaches": n_breaches,
-        "n_dq_issues": len(dq_rows),
-    }
+    n_dq_issues = len(dq_rows)
+    max_abs_diff_bp = float(daily_full["diff_bp"].abs().max()) if len(daily_full) else 0.0
+
+    log.info(
+        "Month %s: %d days, cumulative computed=%.4f%% published=%.4f%%, "
+        "max_diff=%.2f bp, breaches=%d, dq_issues=%d",
+        args.month,
+        len(dates),
+        cum_computed * 100,
+        cum_published * 100,
+        max_abs_diff_bp,
+        n_breaches,
+        n_dq_issues,
+    )
 
     warning_dq = [r for r in dq_rows if r.get("severity") in ("warning", "error")]
     exit_code = 2 if (n_breaches > 0 or warning_dq) else 0
 
-    metadata = {
-        "pdf_dir": str(args.pdf_dir),
-        "csv_dir": str(csv_dir),
-        "returns": str(args.returns),
-        "tolerance": args.tolerance,
-        "git_sha": _git_sha(),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "exit_code": exit_code,
-    }
-
     out_xlsx = args.out / f"benchmark_attribution_{args.month}.xlsx"
     report_excel.write(
         out_xlsx,
+        weights=weights,
+        returns=returns,
         contributions=contributions,
         daily=daily_full,
-        data_quality=dq_frame,
-        summary=summary,
-        metadata=metadata,
+        ignored_indices=ignored_indices,
+        ticker_metadata=ticker_metadata,
     )
     log.info("Wrote %s (exit %d)", out_xlsx, exit_code)
     return exit_code

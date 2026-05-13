@@ -63,5 +63,6 @@ def test_end_to_end_on_synthetic_month(tmp_path, fixture_dir, monkeypatch):
     out_xlsx = out_dir / "benchmark_attribution_2026-03.xlsx"
     assert out_xlsx.exists(), f"missing output: stderr={result.stderr}"
     wb = openpyxl.load_workbook(out_xlsx)
-    assert "daily_benchmark_return" in wb.sheetnames
-    assert "contributions" in wb.sheetnames
+    assert "Weights" in wb.sheetnames
+    assert "Returns" in wb.sheetnames
+    assert "Calculation" in wb.sheetnames

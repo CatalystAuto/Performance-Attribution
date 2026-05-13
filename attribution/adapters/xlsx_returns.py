@@ -1,18 +1,29 @@
 """Adapter: wide-format returns xlsx → canonical long-format frames.
 
-Returns a tuple of:
-  - returns_frame:        (date, ticker, daily_return) long-format
-  - benchmark_published:  (date, benchmark_return_published)
-  - data_quality_rows:    list of dicts describing any issues encountered
+Returns a ReturnsXlsxRead NamedTuple with:
+  - returns:          (date, ticker, daily_return) long-format
+  - published:        (date, benchmark_return_published)
+  - ignored_indices:  (date, ticker, value) long-format — JSAPY and other ignored rows
+  - ticker_metadata:  (ticker, name) — preserves source xlsx row order
+  - data_quality:     list of dicts describing any issues encountered
 """
 from __future__ import annotations
 
 from pathlib import Path
+from typing import NamedTuple
 
 import pandas as pd
 
 PUBLISHED_TICKER_LABEL = "J803TR Index"
 IGNORED_INDEX_LABELS: frozenset[str] = frozenset({"JSAPY Index"})
+
+
+class ReturnsXlsxRead(NamedTuple):
+    returns: pd.DataFrame           # date, ticker, daily_return
+    published: pd.DataFrame         # date, benchmark_return_published  (J803TR)
+    ignored_indices: pd.DataFrame   # date, ticker, value — long format of all ignored index rows
+    ticker_metadata: pd.DataFrame   # ticker, name
+    data_quality: list[dict]
 
 
 def _parse_date_header(cell) -> tuple[pd.Timestamp | None, bool]:
@@ -48,7 +59,7 @@ def _parse_date_header(cell) -> tuple[pd.Timestamp | None, bool]:
         return None, False
 
 
-def read(path: str | Path) -> tuple[pd.DataFrame, pd.DataFrame, list[dict]]:
+def read(path: str | Path) -> ReturnsXlsxRead:
     raw = pd.read_excel(path, sheet_name="Return", header=0)
 
     id_cols = ["Name", "BB Ticker", "JSE code"]
@@ -136,4 +147,35 @@ def read(path: str | Path) -> tuple[pd.DataFrame, pd.DataFrame, list[dict]]:
     )
     benchmark_published["date"] = benchmark_published["date"].astype("datetime64[ns]")
 
-    return returns_frame, benchmark_published, data_quality
+    # Ignored index series (e.g. JSAPY) — long format: date, ticker, value.
+    if not ignored_raw.empty:
+        ignored_melted = ignored_raw[["BB Ticker", *src_cols]].melt(
+            id_vars=["BB Ticker"], value_vars=src_cols,
+            var_name="src_col", value_name="value",
+        )
+        ignored_melted["date"] = ignored_melted["src_col"].map(col_to_date)
+        ignored_indices = (
+            ignored_melted.rename(columns={"BB Ticker": "ticker"})
+            .loc[:, ["date", "ticker", "value"]]
+            .astype({"value": "float64"})
+            .reset_index(drop=True)
+        )
+        ignored_indices["date"] = ignored_indices["date"].astype("datetime64[ns]")
+    else:
+        ignored_indices = pd.DataFrame(columns=["date", "ticker", "value"])
+
+    # Ticker metadata: preserve source xlsx row order, JSE code → Name mapping.
+    ticker_metadata = (
+        stocks_raw[["JSE code", "Name"]]
+        .rename(columns={"JSE code": "ticker", "Name": "name"})
+        .astype({"ticker": str, "name": str})
+        .reset_index(drop=True)
+    )
+
+    return ReturnsXlsxRead(
+        returns=returns_frame,
+        published=benchmark_published,
+        ignored_indices=ignored_indices,
+        ticker_metadata=ticker_metadata,
+        data_quality=data_quality,
+    )
