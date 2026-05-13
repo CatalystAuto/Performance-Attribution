@@ -11,6 +11,7 @@ from pathlib import Path
 
 import openpyxl
 import pandas as pd
+from openpyxl.utils import get_column_letter
 
 def _pivot_wide(
     df: pd.DataFrame,
@@ -129,17 +130,6 @@ def write(
     contribs_wide = _pivot_wide(contributions, index_col="ticker", value_col="contribution", dates=all_dates)
     contribs_body = _build_body(contribs_wide, ordered_tickers, ticker_to_bb, ticker_to_name, all_dates)
 
-    # Build PORT/IDX/DIFF rows
-    port_row = {"Ticker": "PORT", "Name": "Portfolio weighted return (SUM above)"}
-    idx_row = {"Ticker": "IDX", "Name": "J803TR Index (from Returns)"}
-    diff_row = {"Ticker": "DIFF", "Name": "Portfolio - J803TR"}
-    for d, ds in zip(all_dates, date_strs):
-        port_val = float(contribs_body[ds].sum()) if ds in contribs_body.columns else 0.0
-        idx_val = j803tr_row[ds]
-        port_row[ds] = port_val
-        idx_row[ds] = idx_val
-        diff_row[ds] = port_val - idx_val
-
     # ── Build workbook with openpyxl ────────────────────────────────────────
     wb = openpyxl.Workbook()
 
@@ -170,22 +160,56 @@ def write(
     for c_idx, h in enumerate(header, 1):
         ws_calc.cell(1, c_idx).value = h
 
-    # Rows 2 onwards: contribution data
-    for r_idx, row_data in enumerate(contribs_body.itertuples(index=False), 2):
-        for c_idx, val in enumerate(row_data, 1):
-            ws_calc.cell(r_idx, c_idx).value = val if pd.notna(val) else None
+    # Rows 2..1+N: Ticker + Name as literal labels (cols A/B); formula cells
+    # for each date column reference the matching cell in Weights and Returns
+    # so the user can audit by editing inputs.
+    n_tickers = len(contribs_body)
+    for r_offset, row_data in enumerate(contribs_body.itertuples(index=False)):
+        r_idx = r_offset + 2
+        ws_calc.cell(r_idx, 1).value = row_data[0]  # Ticker
+        ws_calc.cell(r_idx, 2).value = row_data[1]  # Name
+        for c_idx in range(3, len(header) + 1):
+            col_letter = get_column_letter(c_idx)
+            ws_calc.cell(r_idx, c_idx).value = (
+                f"=Weights!{col_letter}{r_idx}*Returns!{col_letter}{r_idx}"
+            )
 
-    # Row after data: blank row
-    blank_row = len(contribs_body) + 2  # row 2 + n_tickers = first blank
-    # (no values written → cells stay None)
+    # Row after data: blank row (no values written → cells stay None)
+    blank_row = n_tickers + 2  # first blank row
 
-    # PORT / IDX / DIFF rows
-    summary_start = blank_row + 1
-    for s_idx, summary_row_dict in enumerate([port_row, idx_row, diff_row]):
-        r = summary_start + s_idx
-        for c_idx, col in enumerate(header, 1):
-            val = summary_row_dict.get(col, None)
-            ws_calc.cell(r, c_idx).value = val if (val is not None and pd.notna(val)) else None
+    # PORT / IDX / DIFF rows — all formulas.
+    port_row_idx = blank_row + 1
+    idx_row_idx = blank_row + 2
+    diff_row_idx = blank_row + 3
+
+    # PORT — label cols + SUM formula across the ticker rows in each date column
+    ws_calc.cell(port_row_idx, 1).value = "PORT"
+    ws_calc.cell(port_row_idx, 2).value = "Portfolio weighted return (SUM above)"
+    for c_idx in range(3, len(header) + 1):
+        col_letter = get_column_letter(c_idx)
+        ws_calc.cell(port_row_idx, c_idx).value = (
+            f"=SUM({col_letter}2:{col_letter}{n_tickers + 1})"
+        )
+
+    # IDX — label cols + reference the J803TR row in Returns. Returns has
+    # the same N stock rows in the same order, then J803TR at row N+2.
+    j803tr_returns_row = n_tickers + 2
+    ws_calc.cell(idx_row_idx, 1).value = "IDX"
+    ws_calc.cell(idx_row_idx, 2).value = "J803TR Index (from Returns)"
+    for c_idx in range(3, len(header) + 1):
+        col_letter = get_column_letter(c_idx)
+        ws_calc.cell(idx_row_idx, c_idx).value = (
+            f"=Returns!{col_letter}{j803tr_returns_row}"
+        )
+
+    # DIFF — label cols + (PORT - IDX) for each date column
+    ws_calc.cell(diff_row_idx, 1).value = "DIFF"
+    ws_calc.cell(diff_row_idx, 2).value = "Portfolio - J803TR"
+    for c_idx in range(3, len(header) + 1):
+        col_letter = get_column_letter(c_idx)
+        ws_calc.cell(diff_row_idx, c_idx).value = (
+            f"={col_letter}{port_row_idx}-{col_letter}{idx_row_idx}"
+        )
 
     # ── Parquet sidecar ─────────────────────────────────────────────────────
     sidecar = out_xlsx.with_name(out_xlsx.stem + "_contributions.parquet")

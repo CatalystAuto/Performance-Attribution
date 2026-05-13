@@ -112,6 +112,42 @@ def test_calculation_sheet_has_header_blank_and_summary_rows(report_inputs, tmp_
     assert ws.cell(blank_row_idx, 1).value is None
 
 
+def test_calculation_data_cells_are_formulas(report_inputs, tmp_path):
+    weights, returns, contributions, daily, ignored_indices, ticker_metadata = report_inputs
+    out_xlsx = tmp_path / "benchmark_attribution_2026-03.xlsx"
+
+    ex.write(
+        out_xlsx,
+        weights=weights,
+        returns=returns,
+        contributions=contributions,
+        daily=daily,
+        ignored_indices=ignored_indices,
+        ticker_metadata=ticker_metadata,
+    )
+
+    wb = openpyxl.load_workbook(out_xlsx)
+    ws = wb["Calculation"]
+
+    # First contribution data cell (row 2, col C) is =Weights!C2*Returns!C2
+    assert ws.cell(2, 3).value == "=Weights!C2*Returns!C2"
+
+    # PORT row uses SUM across the ticker rows of the same column
+    port_r = ws.max_row - 2
+    last_ticker_row = port_r - 2  # skip the blank row
+    assert ws.cell(port_r, 3).value == f"=SUM(C2:C{last_ticker_row})"
+
+    # IDX row points to the J803TR row in Returns (= last_ticker_row + 1 in Returns,
+    # since Returns has 24-stock layout matching Calculation's stock rows then J803TR)
+    idx_r = ws.max_row - 1
+    j803tr_returns_row = last_ticker_row + 1
+    assert ws.cell(idx_r, 3).value == f"=Returns!C{j803tr_returns_row}"
+
+    # DIFF row is PORT - IDX
+    diff_r = ws.max_row
+    assert ws.cell(diff_r, 3).value == f"=C{port_r}-C{idx_r}"
+
+
 def test_weights_sheet_shape(report_inputs, tmp_path):
     weights, returns, contributions, daily, ignored_indices, ticker_metadata = report_inputs
     out_xlsx = tmp_path / "benchmark_attribution_2026-03.xlsx"
