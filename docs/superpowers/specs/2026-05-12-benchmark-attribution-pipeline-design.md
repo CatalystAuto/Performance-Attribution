@@ -11,7 +11,7 @@ Build a Python package + CLI that, for a given month, computes:
 1. The daily benchmark return as `Σ(weight × daily_return)` over the benchmark's constituents.
 2. The per-stock contribution `weight × daily_return` (the row-level table later Brinson stages will consume).
 
-Then validate the computed daily benchmark return against the published `JSAPY Index` return contained in the returns workbook, flagging any day where `|computed − published| > 1e-7` (0.001 bp).
+Then validate the computed daily benchmark return against the published `J803TR Index` (total-return) row contained in the returns workbook, flagging any day where `|computed − published| > 1e-7` (0.001 bp).
 
 The first month of operation is **March 2026** against benchmark **J803**.
 
@@ -23,7 +23,9 @@ The first month of operation is **March 2026** against benchmark **J803**.
 - Wide layout: rows = stocks, columns = dates. First three columns are identifiers (`Name`, `BB Ticker`, `JSE code`); remaining columns are daily returns headed `YYYYMMDD`.
 - Returns are simple daily returns in decimal form (e.g., `-0.0188` for −1.88%).
 - The first date column (`20260228`) is a base date and all return values are `0`.
-- The last row is the published benchmark return labelled `JSAPY Index` in the `BB Ticker` column.
+- The sheet contains two index rows below the stock rows, both identified by `BB Ticker`:
+  - `J803TR Index` — the J803 total-return series. **This is the validation target.**
+  - `JSAPY Index` — the legacy SA Listed Property series. Carried in the file for reference; the pipeline ignores it and records its presence in `data_quality` with `category="ignored_index_row"`.
 - Known data-quality issues:
   - `20260331` appears as a duplicate column header. Resolution rule: keep the first occurrence, record the duplicate in `data_quality`.
   - The xlsx universe (25 stocks) is a superset of the J803 universe (21 stocks in current CSVs). The extras are non-benchmark names held by portfolios and are ignored on the benchmark side.
@@ -62,7 +64,7 @@ attribution/
 ├── compute/
 │   └── benchmark.py
 ├── validate/
-│   └── jsapy.py
+│   └── published.py
 ├── report/
 │   └── excel.py
 ├── cli.py
@@ -84,10 +86,10 @@ Each adapter converts one source format into a canonical pandas DataFrame. Compu
 | `daily_return` | float64        | simple return in decimal              |
 
 ### 4.2 `benchmark_published`
-| column                       | dtype          | notes                              |
-| ---------------------------- | -------------- | ---------------------------------- |
-| `date`                       | datetime64[ns] |                                    |
-| `benchmark_return_published` | float64        | from the `JSAPY Index` row of xlsx |
+| column                       | dtype          | notes                                |
+| ---------------------------- | -------------- | ------------------------------------ |
+| `date`                       | datetime64[ns] |                                      |
+| `benchmark_return_published` | float64        | from the `J803TR Index` row of xlsx  |
 
 ### 4.3 `weights_frame`
 | column             | dtype          | notes                          |
@@ -125,7 +127,9 @@ Each adapter converts one source format into a canonical pandas DataFrame. Compu
 - Read the single `Return` sheet.
 - Identify the date columns: header values that parse as 8-digit dates in `YYYYMMDD` form, accepting either integer cells (e.g., `20260302`) or string cells (e.g., `"20260302"`). Convert to `datetime64`.
 - Resolve duplicate date columns: keep the first occurrence; record each duplicate as a `data_quality` row with `category="duplicate_return_column"`.
-- Identify the index row by `BB Ticker == "JSAPY Index"`; split it out into `benchmark_published`.
+- Route non-stock rows by `BB Ticker`:
+  - `J803TR Index` → split out into `benchmark_published`.
+  - Any other ticker in the configured ignored set (default: `{"JSAPY Index"}`) → discard and record a `data_quality` row with `category="ignored_index_row"`.
 - Melt the remaining stock rows from wide to long, dropping the base date (28 Feb) returns where requested by the loader, and rename `JSE code` → `ticker`.
 - Return `(returns_frame, benchmark_published, data_quality_rows)`.
 
@@ -179,12 +183,14 @@ daily = contributions.groupby("date", as_index=False)["contribution"].sum()
 
 Rules:
 - **Left join, not inner.** A ticker present in weights but missing from returns produces `daily_return = NaN`, `contribution = NaN`, and a `NaN` benchmark return for that date. Missing returns are recorded in `data_quality` with `category="missing_return"`. We do not impute zero — that would bias the benchmark return downward and mask the data issue.
-- **No weight renormalization.** Weights are used as reported. If the source sums to 0.9998 instead of 1.0000, the computed return reflects that. Renormalization would mask weight-extraction bugs and obscure the comparison to the published JSAPY return.
+- **No weight renormalization.** Weights are used as reported. If the source sums to 0.9998 instead of 1.0000, the computed return reflects that. Renormalization would mask weight-extraction bugs and obscure the comparison to the published J803TR return.
 - **Base date.** The 28 Feb base date is included in the run only if explicitly requested via the trading-date list; by default the CLI runs March-only dates. When included, all return values are 0 and contributions are 0.
 
 Cumulative return reported in the `summary` sheet is **compound**: `Π(1 + r_t) − 1`.
 
-## 8. Validation (`validate/jsapy.py`)
+## 8. Validation (`validate/published.py`)
+
+Target series: the `J803TR Index` row of the returns xlsx.
 
 ```python
 val = (
@@ -255,7 +261,7 @@ A sidecar `output/benchmark_attribution_<YYYY-MM>_contributions.parquet` is also
 - **Adapter unit tests** with fixture files in `tests/fixtures/`:
   - `pdf_weights`: a snapshot of page 2 of one real PDF, plus synthetic minimal PDFs covering one good case, one malformed-but-recoverable case, and one rejection case.
   - `csv_weights`: hand-written tiny CSVs covering closing-only, closing+opening, and malformed-block cases.
-  - `xlsx_returns`: a tiny xlsx with 3 stocks × 3 dates + a JSAPY row, including a duplicate column to exercise the dedupe rule.
+  - `xlsx_returns`: a tiny xlsx with 3 stocks × 3 dates + a `J803TR Index` row + a `JSAPY Index` row, including a duplicate column to exercise the dedupe rule and the ignored-index-row logging.
 - **Loader tests** for the source-routing precedence (PDF wins; PDF rejected → CSV; both missing → skip).
 - **Compute tests** with hand-calculated golden values for a 3×3 mini scenario.
 - **Validation tests** for tolerance-edge cases (exactly at, just over, just under 1e-7).
