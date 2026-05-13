@@ -12,13 +12,6 @@ from pathlib import Path
 import openpyxl
 import pandas as pd
 
-_INSTRUCTION = (
-    "Each cell below = Weights!cell  *  Returns!cell  (the contribution of that stock "
-    "to the daily portfolio return). The 'SUM' row is the portfolio's daily weighted "
-    "return; compare it against the J803TR row."
-)
-
-
 def _pivot_wide(
     df: pd.DataFrame,
     *,
@@ -172,21 +165,18 @@ def write(
     # ── Sheet 3: Calculation ────────────────────────────────────────────────
     ws_calc = wb.create_sheet("Calculation")
 
-    # Row 1: instruction string in A1 only
-    ws_calc.cell(1, 1).value = _INSTRUCTION
-
-    # Row 2: header (Ticker, Name, date1, date2, ...)
+    # Row 1: header (Ticker, Name, date1, date2, ...)
     header = ["Ticker", "Name"] + date_strs
     for c_idx, h in enumerate(header, 1):
-        ws_calc.cell(2, c_idx).value = h
+        ws_calc.cell(1, c_idx).value = h
 
-    # Rows 3 onwards: contribution data
-    for r_idx, row_data in enumerate(contribs_body.itertuples(index=False), 3):
+    # Rows 2 onwards: contribution data
+    for r_idx, row_data in enumerate(contribs_body.itertuples(index=False), 2):
         for c_idx, val in enumerate(row_data, 1):
             ws_calc.cell(r_idx, c_idx).value = val if pd.notna(val) else None
 
     # Row after data: blank row
-    blank_row = len(contribs_body) + 3  # row 3 + n_tickers = first blank
+    blank_row = len(contribs_body) + 2  # row 2 + n_tickers = first blank
     # (no values written → cells stay None)
 
     # PORT / IDX / DIFF rows

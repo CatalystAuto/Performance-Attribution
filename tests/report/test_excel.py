@@ -77,7 +77,7 @@ def test_workbook_has_three_sheets_with_expected_names(report_inputs, tmp_path):
     assert wb.sheetnames == ["Weights", "Returns", "Calculation"]
 
 
-def test_calculation_sheet_has_instruction_blank_and_summary_rows(report_inputs, tmp_path):
+def test_calculation_sheet_has_header_blank_and_summary_rows(report_inputs, tmp_path):
     weights, returns, contributions, daily, ignored_indices, ticker_metadata = report_inputs
     out_xlsx = tmp_path / "benchmark_attribution_2026-03.xlsx"
 
@@ -94,16 +94,10 @@ def test_calculation_sheet_has_instruction_blank_and_summary_rows(report_inputs,
     wb = openpyxl.load_workbook(out_xlsx)
     ws = wb["Calculation"]
 
-    # Row 1, col A is the instructional string
-    assert ws.cell(1, 1).value is not None
-    assert ws.cell(1, 1).value.startswith("Each cell below")
-    # Row 1 cols B onwards should be empty
-    assert ws.cell(1, 2).value is None
-
-    # Row 2 is the header
-    assert ws.cell(2, 1).value == "Ticker"
-    assert ws.cell(2, 2).value == "Name"
-    assert ws.cell(2, 3).value == "2026-03-02"
+    # Row 1 is the header
+    assert ws.cell(1, 1).value == "Ticker"
+    assert ws.cell(1, 2).value == "Name"
+    assert ws.cell(1, 3).value == "2026-03-02"
 
     # Bottom of sheet: PORT, IDX, DIFF rows (last 3 rows)
     last_three = [
