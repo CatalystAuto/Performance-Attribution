@@ -14,6 +14,8 @@ from attribution import config
 def validate(
     computed: pd.DataFrame,
     published: pd.DataFrame,
+    *,
+    tolerance: float = config.TOLERANCE_DECIMAL,
 ) -> pd.DataFrame:
     merged = computed.merge(published, on="date", how="outer")
     merged["diff_decimal"] = (
@@ -21,7 +23,7 @@ def validate(
     )
     merged["diff_bp"] = merged["diff_decimal"] * 10_000.0
     merged["exceeds_tolerance"] = (
-        merged["diff_decimal"].abs() > config.TOLERANCE_DECIMAL
+        merged["diff_decimal"].abs() > tolerance
     )
     return merged[[
         "date",

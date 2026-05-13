@@ -66,9 +66,6 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     logging.basicConfig(level=args.log_level, format="%(levelname)s %(name)s: %(message)s")
 
-    if args.tolerance != config.TOLERANCE_DECIMAL:
-        config.TOLERANCE_DECIMAL = args.tolerance
-
     csv_dir = args.csv_dir or config.csv_dir_for(args.month, args.benchmark)
 
     log.info("Reading returns from %s", args.returns)
@@ -93,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     contributions, daily_computed = bm.compute(weights, returns)
-    daily_full = published_v.validate(daily_computed, published)
+    daily_full = published_v.validate(daily_computed, published, tolerance=args.tolerance)
 
     missing = contributions[contributions["daily_return"].isna()]
     missing_dq = [
@@ -122,7 +119,8 @@ def main(argv: list[str] | None = None) -> int:
         "n_dq_issues": len(dq_rows),
     }
 
-    exit_code = 2 if (n_breaches > 0 or dq_rows) else 0
+    warning_dq = [r for r in dq_rows if r.get("severity") in ("warning", "error")]
+    exit_code = 2 if (n_breaches > 0 or warning_dq) else 0
 
     metadata = {
         "pdf_dir": str(args.pdf_dir),
