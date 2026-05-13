@@ -55,8 +55,23 @@ _BENCHMARK_BAND: tuple[float, float] = (288.0, 345.0)
 
 _HEADER_KEYWORDS = ("Benchmark", "Ticker", "Name")
 
-# JSE ticker: 2–5 uppercase letters (most are 3, some are 4 e.g. L2D)
-_TICKER_RE = re.compile(r"^[A-Z]{2,5}$")
+# JSE ticker: exactly 3–4 uppercase letters (e.g. NRP, L2D, NEPI)
+_TICKER_RE = re.compile(r"^[A-Z]{3,4}$")
+
+# Bloomberg full identifier suffix appended to every JSE ticker code.
+_TICKER_SUFFIX = " SJ Equity"
+
+
+def _clean_ticker(raw: str) -> str | None:
+    """Strip the Bloomberg ` SJ Equity` suffix and validate as a JSE code.
+
+    Returns the cleaned 3-4 letter uppercase code, or None if the input
+    doesn't match the JSE-code pattern after cleaning.
+    """
+    if not raw:
+        return None
+    candidate = raw.replace(_TICKER_SUFFIX, "").strip().upper()
+    return candidate if _TICKER_RE.fullmatch(candidate) else None
 
 
 def _is_valid_ticker(text: str) -> bool:
@@ -158,6 +173,7 @@ def read_page2(path: str | Path) -> pd.DataFrame | None:
         if is_percent:
             weight /= 100.0
         elif weight > 1.5:
+            # Defensive fallback for any PDF that reports % values without a literal `%` suffix.
             weight /= 100.0
 
         extracted.append((ticker, weight))
